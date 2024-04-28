@@ -7,15 +7,15 @@ import(
 )
 
 type Command struct {
-	Command string
-	Arguments []string
+	Command string `json:"command"`
+	Arguments []string `json:"arguments"`
 }
 
 type Value struct {
-	Key string 
-	Value string
-	Version int
-	Commited bool
+	Key string `json:"key"`
+	Value string `json:"value"`
+	Version int `json:"version"`
+	Commited bool `json:"commited"`
 }
 
 type Storage struct {
@@ -48,7 +48,7 @@ func (s *Storage) Get(command Command, id int) Command {
 		}
 		return_command = fmt.Sprintf("returnedAll_%d", id)
 	} else if command.Command == "read" {
-		k := command.Arguments[0]
+		k := command.Arguments[1]
 		if v, ok := s.dict[k]; ok {
 			if v.Commited {
 				str := fmt.Sprintf("Key: %s | Value: %s | Version: %d", k, v.Value, v.Version)

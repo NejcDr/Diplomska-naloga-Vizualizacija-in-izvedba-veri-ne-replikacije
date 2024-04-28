@@ -3,154 +3,74 @@ package server
 import(
 	"fmt"
 	"time"
+	"sync"
 
 	"Chain_Replication/storage"
 )
 
-func Put(id int, s *storage.Storage, input chan storage.Value, output chan storage.Value, command chan storage.Command) {
-	//fmt.Printf("%d PUT\n", id)
-	/*
-	for value := range input {
-		fmt.Println("PUT")
-		if cmd, err := s.Put(value, id); err == nil {
-			output <- value
-			command <- cmd
-		}
-	}
-	*/
+var NUM_SERVERS int
+
+var PUT_CHANS []chan storage.Value
+var COMMIT_CHANS []chan storage.Value
+
+var GET_INPUT_CHANS []chan storage.Command
+var GET_OUTPUT_CHANS []chan storage.Command
+
+var COMMAND_CHANS []chan storage.Command
+
+func server(id int) {
+
+	fmt.Printf("Servers %d start\n", id)
+	s := storage.NewStorage()
+
 	for {
 		select {
-		case value, ok := <-input:
+		case value, ok := <-PUT_CHANS[id]:
 			if ok {
-				//fmt.Printf("%d read from input head\n", id)
-				//fmt.Printf("%d send to output head\n", id)
 				if val, cmd, err := s.Put(value, id); err == nil {
-					output <- val
-					//fmt.Printf("%d send to output head\n", id)
-					command <- cmd
+					PUT_CHANS[id+1] <- val
+					COMMAND_CHANS[id] <- cmd
 				}
 			}
-		default:
-			time.Sleep(1 * time.Millisecond)
-		}
-	}
-}
-
-func Commit(id int, s *storage.Storage, input chan storage.Value, output chan storage.Value, command chan storage.Command) {
-	//fmt.Printf("%d COMMIT\n", id)
-	/*
-	for value := range input {
-		fmt.Println("COMMIT")
-		if cmd, err := s.Commit(value, id); err == nil {
-			output <- value
-			command <- cmd
-		}
-	}
-	*/
-	for {
-		select {
-		case value, ok := <-input:
+		case value, ok := <-COMMIT_CHANS[id+1]:
 			if ok {
-				//fmt.Printf("%d read from input tail\n", id)
-				//fmt.Printf("%d send to output tail\n", id)
 				if val, cmd, err := s.Commit(value, id); err == nil {
-					output <- val
-					//fmt.Printf("%d send to output tail\n", id)
-					command <- cmd
+					COMMIT_CHANS[id] <- val
+					COMMAND_CHANS[id] <- cmd
 				}
 			}
-		default:
-			time.Sleep(1 * time.Millisecond)
-		}
-	}
-}
-
-func Get(id int, s *storage.Storage, input chan storage.Command, output chan storage.Command) {
-	//fmt.Printf("%d GET\n", id)
-	/*
-	for command := range input {
-		fmt.Println("GET")
-		return_command := s.Get(command, id)
-		output <- return_command
-	}
-	*/
-	for {
-		select {
-		case command, ok := <-input:
+		case command, ok := <-GET_INPUT_CHANS[id]:
 			if ok {
-				//fmt.Printf("%d read from input get\n", id)
-				return_command := s.Get(command, id)
-				output <- return_command
-				//fmt.Printf("%d send to output get\n", id)
+				cmd := s.Get(command, id)
+				GET_OUTPUT_CHANS[id] <- cmd
 			}	
 		default:
 			time.Sleep(1 * time.Millisecond)
 		}
-	}	
+	}
 }
 
-func Server(id int, n_servers int,
-	input_head_chan chan storage.Value, output_head_chan chan storage.Value, 
-	input_tail_chan chan storage.Value, output_tail_chan chan storage.Value,
-	input_read_chan chan storage.Command, output_read_chan chan storage.Command,
-	command_output_chan chan storage.Command) {
+func ServersInit(n_servers int,
+	put_chans []chan storage.Value, commit_chans []chan storage.Value,
+	get_input_chans []chan storage.Command, get_output_chans []chan storage.Command,
+	command_chans []chan storage.Command) {
 
-	fmt.Printf("Servers %d start\n", id)
+	NUM_SERVERS = n_servers
+	PUT_CHANS = put_chans
+	COMMIT_CHANS = commit_chans
+	GET_INPUT_CHANS = get_input_chans
+	GET_OUTPUT_CHANS = get_output_chans
+	COMMAND_CHANS = command_chans
 
-	s := storage.NewStorage()
+	var wg sync.WaitGroup
 
-	go Put(id, s, input_head_chan, output_head_chan, command_output_chan)
-	go Commit(id, s, input_tail_chan, output_tail_chan, command_output_chan)
-	go Get(id, s, input_read_chan, output_read_chan)
-
-	select {}
-	
-	/*
-	if id == (n_servers - 1) {
-		for {
-			select {
-			case value, ok := <-input_head_chan:
-				if ok {
-					if cmd, err := s.Put(value, id); err == nil {
-						command_output_chan <- cmd
-						if cmd, err := s.Commit(value, id); err == nil {
-							output_tail_chan <- value
-							command_output_chan <- cmd
-						}
-					}
-				}
-			case command, ok := <-input_read_chan:
-				if ok {
-					return_command := s.Get(command, id)
-					output_read_chan <- return_command
-				}
-			}
-		}
-
-	} else {
-		for {
-			select {
-			case value, ok := <-input_head_chan:
-				if ok {
-					if cmd, err := s.Put(value, id); err == nil {
-						output_head_chan <- value
-						command_output_chan <- cmd
-					}
-				}
-			case value, ok := <-input_tail_chan:
-				if ok {
-					if cmd, err := s.Commit(value, id); err == nil {
-						output_tail_chan <- value
-						command_output_chan <- cmd
-					}
-				}
-			case command, ok := <-input_read_chan:
-				if ok {
-					return_command := s.Get(command, id)
-					output_read_chan <- return_command
-				}
-			}
-		}
+	for i := 0; i < NUM_SERVERS; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			server(i)
+		}(i)
 	}
-	*/
+
+	wg.Wait()
 }

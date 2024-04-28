@@ -3,19 +3,28 @@ package rest
 import(
 	"fmt"
 	"time"
+	"sync"
+	"encoding/json"
+    "log"
+    "net/http"
+	"strconv"
+
+    "github.com/gorilla/mux"
 	"Chain_Replication/storage"
 )
 
+var NUM_SERVERS int
+
+var INPUT_HEAD_CHAN chan storage.Value
+var OUTPUT_HEAD_CHAN chan storage.Value
+
+var GET_INPUT_CHANS []chan storage.Command
+var GET_OUTPUT_CHANS []chan storage.Command
+
+var COMMAND_CHANS []chan storage.Command
+
+/*
 func WriteOutGet(id int, output chan storage.Command) {
-	/*
-	for cmd := range output {
-		fmt.Printf("%s\n", cmd.Command)
-		for _, arg := range cmd.Arguments {
-			fmt.Printf("%s\n", arg)
-		}
-		fmt.Println()
-	}
-	*/
 	for {
 		select {
 		case cmd, ok := <-output:
@@ -31,20 +40,12 @@ func WriteOutGet(id int, output chan storage.Command) {
 		}
 	}
 }
+*/
 
-func WriteOutCommand(id int, output chan storage.Command) {
-	/*
-	for cmd := range output {
-		fmt.Printf("%s\n", cmd.Command)
-		for _, arg := range cmd.Arguments {
-			fmt.Printf("%s\n", arg)
-		}
-		fmt.Println()
-	}
-	*/
+func WriteOutCommand(id int) {
 	for {
 		select {
-		case cmd, ok := <-output:
+		case cmd, ok := <-COMMAND_CHANS[id]:
 			if ok {
 				fmt.Printf("%s\n", cmd.Command)
 				for i := 0; i < len(cmd.Arguments); i++ {
@@ -56,6 +57,55 @@ func WriteOutCommand(id int, output chan storage.Command) {
 			time.Sleep(1 * time.Millisecond)
 		}
 	}
+}
+
+func readMethod(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var readInCommand storage.Command
+	_ = json.NewDecoder(r.Body).Decode(&readInCommand)
+
+	server, err := strconv.Atoi(readInCommand.Arguments[0])
+	if err != nil {
+		json.NewEncoder(w).Encode(nil)
+		return
+	}
+
+	GET_INPUT_CHANS[server] <- readInCommand
+
+	readOutCommand, ok := <-GET_OUTPUT_CHANS[server]
+	if ok {
+		json.NewEncoder(w).Encode(readOutCommand)
+		return
+	}
+
+	json.NewEncoder(w).Encode(nil)
+}
+
+func insertMethod(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var inputValue storage.Value
+	_ = json.NewDecoder(r.Body).Decode(&inputValue)
+
+	INPUT_HEAD_CHAN <- inputValue
+
+	outValue, ok := <-OUTPUT_HEAD_CHAN
+	if ok {
+		json.NewEncoder(w).Encode(outValue)
+		return
+	}
+
+	json.NewEncoder(w).Encode(nil)
+}
+
+func restReciver() {
+	r := mux.NewRouter()
+
+	r.HandleFunc("/read", readMethod).Methods("GET")
+	r.HandleFunc("/insert", insertMethod).Methods("POST")
+
+	log.Fatal(http.ListenAndServe(":8080", r))
 }
 
 func Rest(num_of_servers int,
@@ -65,6 +115,32 @@ func Rest(num_of_servers int,
 
 	fmt.Println("Rest start")
 
+	NUM_SERVERS = num_of_servers
+	INPUT_HEAD_CHAN = head_input_chan
+	OUTPUT_HEAD_CHAN = head_output_chan
+	GET_INPUT_CHANS = get_input_chans
+	GET_OUTPUT_CHANS = get_output_chans
+	COMMAND_CHANS = command_chans
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < NUM_SERVERS; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			WriteOutCommand(i)
+		}(i)
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		restReciver()
+	}()
+
+	wg.Wait()
+
+	/*
 	value1 := storage.Value{Key: "Jabolka", Value: "10"}
 	value2 := storage.Value{Key: "Hruska", Value: "5"}
 	value3 := storage.Value{Key: "Jabolka", Value: "20"}
@@ -103,4 +179,5 @@ func Rest(num_of_servers int,
 
 	time.Sleep(1 * time.Second)
 	get_input_chans[num_of_servers - 1] <- read
+	*/
 }
