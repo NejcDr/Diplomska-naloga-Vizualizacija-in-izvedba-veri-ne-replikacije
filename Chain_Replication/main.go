@@ -28,12 +28,15 @@ func main() {
 
 	command_chans := make([]chan storage.Command, nPtr)
 
+	token_chans := make([]chan int, nPtr)
+
 	for i := 0; i < nPtr; i++ {
 		put_chans[i] = make(chan storage.Value, 10)
 		commit_chans[i] = make(chan storage.Value, 10)
 		get_input_chans[i] = make(chan storage.Command, 10)
 		get_output_chans[i] = make(chan storage.Command, 10)
 		command_chans[i] = make(chan storage.Command, 10)
+		token_chans[i] = make(chan int)
 	}
 
 	tail_chan := make(chan storage.Value, 10)
@@ -45,7 +48,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		server.ServersInit(nPtr, put_chans, commit_chans, get_input_chans, get_output_chans, command_chans)
+		server.ServersInit(nPtr, put_chans, commit_chans, get_input_chans, get_output_chans, command_chans, token_chans)
 	}()
 
 	time.Sleep(3 * time.Second)
@@ -53,7 +56,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		rest.Rest(nPtr, put_chans[0], commit_chans[0], get_input_chans, get_output_chans, command_chans)
+		rest.Rest(nPtr, put_chans[0], commit_chans[0], get_input_chans, get_output_chans, command_chans, token_chans)
 	}()
 
 	wg.Wait()

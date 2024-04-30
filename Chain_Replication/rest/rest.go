@@ -15,6 +15,8 @@ import(
 
 var NUM_SERVERS int
 
+var TOKEN_ID int
+
 var INPUT_HEAD_CHAN chan storage.Value
 var OUTPUT_HEAD_CHAN chan storage.Value
 
@@ -22,6 +24,8 @@ var GET_INPUT_CHANS []chan storage.Command
 var GET_OUTPUT_CHANS []chan storage.Command
 
 var COMMAND_CHANS []chan storage.Command
+
+var TOKEN_CHANS []chan int
 
 /*
 func WriteOutGet(id int, output chan storage.Command) {
@@ -87,6 +91,7 @@ func insertMethod(w http.ResponseWriter, r *http.Request) {
 
 	var inputValue storage.Value
 	_ = json.NewDecoder(r.Body).Decode(&inputValue)
+	inputValue.Token = -1
 
 	INPUT_HEAD_CHAN <- inputValue
 
@@ -99,11 +104,24 @@ func insertMethod(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(nil)
 }
 
+
+func clockMethod(w http.ResponseWriter, r *http.Request) {
+	TOKEN_ID++
+
+	for i := 0; i < NUM_SERVERS; i++ {
+		TOKEN_CHANS[i] <- TOKEN_ID
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(nil)
+}
+
 func restReciver() {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/read", readMethod).Methods("GET")
 	r.HandleFunc("/insert", insertMethod).Methods("POST")
+	r.HandleFunc("/clock", clockMethod).Methods("GET")
 
 	log.Fatal(http.ListenAndServe(":8080", r))
 }
@@ -111,16 +129,19 @@ func restReciver() {
 func Rest(num_of_servers int,
 	head_input_chan chan storage.Value, head_output_chan chan storage.Value,
 	get_input_chans []chan storage.Command, get_output_chans []chan storage.Command,
-	command_chans []chan storage.Command) {
+	command_chans []chan storage.Command, token_chans []chan int) {
 
 	fmt.Println("Rest start")
 
 	NUM_SERVERS = num_of_servers
+	TOKEN_ID = 0
+
 	INPUT_HEAD_CHAN = head_input_chan
 	OUTPUT_HEAD_CHAN = head_output_chan
 	GET_INPUT_CHANS = get_input_chans
 	GET_OUTPUT_CHANS = get_output_chans
 	COMMAND_CHANS = command_chans
+	TOKEN_CHANS = token_chans
 
 	var wg sync.WaitGroup
 
