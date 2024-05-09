@@ -91,7 +91,6 @@ func insertMethod(w http.ResponseWriter, r *http.Request) {
 
 	var inputValue storage.Value
 	_ = json.NewDecoder(r.Body).Decode(&inputValue)
-	inputValue.Token = -1
 
 	INPUT_HEAD_CHAN <- inputValue
 
